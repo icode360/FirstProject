@@ -2,103 +2,161 @@ package com.icode.firstproject.common.userstart;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 
-import com.icode.firstproject.MainApp;
-import com.icode.firstproject.common.constant.ISharedPreferences;
-import com.icode.firstproject.utils.SpUtils;
+import com.icode.firstproject.utils.MachineUtils;
 
 
 /**
- *
+ * 启动管理
  */
 public class UserStartManager {
-	
-	private static int sLastVersionCode;
-	private static boolean sNewVersionFirstRun; // 新版本的第一次启动
-	private static int sFirstRun; // 全新安装，第一次启动
-	
-	private static final int NEVER_RUN = 0; // 从来没运行过
-	private static final int FIRST_RUN = 1; // 本次是第一次运行
-	private static final int REPEATEDLY_RUN = 2; // 本次不是第一次运行
 
-	/**
-	 *
-	 */
-	private static void doSomeThingFirstRun(final Context context) {
-        sFirstRun = getFirstRunFlagSharedPreferences(context); // 默认是NEVER_RUN
-        if (sFirstRun == FIRST_RUN) { // 如果上一次保存的是首次运行
-            saveFirstRunFlagSharedPreferences(context, REPEATEDLY_RUN); // 保存为这次不是首次运行
-            sFirstRun = REPEATEDLY_RUN;
-            return;
-        } else if (sFirstRun == NEVER_RUN) {
-            saveFirstRunFlagSharedPreferences(context, FIRST_RUN); // 这次是首次运行
-            sFirstRun = FIRST_RUN;
-            return;
-        } // REPEATEDLY_RUN
-    }
+    static final String INSTALL_VERSION_SP = "install_version_sp"; // sp名字
+    static final String INSTALL_VERSION_KEY = "install_version_key"; // 安装版本号
+    static final String LAST_VERSION_KEY = "last_version_key"; // 如果是升级用户, 上一个版本号
+    static final String LAST_RUN_VERSION_KEY = "last_run_version_key"; // 上一次运行版本号, 用进程名做后缀
+    static final String INSTALL_AND_UPGRADE_TIME = "install_and_upgrade_time_key"; // 安装后者升级后第一次运行的时间
 
-    static boolean isFirstRun() {
-		return sFirstRun == FIRST_RUN;
-	}
-	
-    static boolean isNewVersionFirstRun() {
-		return sNewVersionFirstRun;
-	}
-	
-    private static void setNewVersionFirstRun(boolean firstRun) {
-		sNewVersionFirstRun = firstRun;
-	}
-	
-	private static int getFirstRunFlagSharedPreferences(Context context) {
-		SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-		int fristRunFlag = prefs.getInt(ISharedPreferences.IS_FIRST_RUN, NEVER_RUN);
-		return fristRunFlag;
-	}
-	
-	private static void saveFirstRunFlagSharedPreferences(Context context, int firstRunFlag) {
-		SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-		prefs.edit().putInt(ISharedPreferences.IS_FIRST_RUN, firstRunFlag).commit();
-		sFirstRun = firstRunFlag;
-	}
-	
-    static void doSomeThing(Context context) {
-		doSomeThingFirstRun(context);
-		doSomeThingNewVersionFirstRun(context);
-	}
+    static final String FIRST_INSTALL_TIME = "first_install_time"; // 应用首次安装时间
 
-	private static void doSomeThingNewVersionFirstRun(final Context context) {
-        sLastVersionCode = getLastVersionCodeSharedPreferences(context); // 上一次运行的版本
-        final int curVersionCode = MainApp.getVersionCode();
-        if (sLastVersionCode > 0 && curVersionCode > sLastVersionCode) { // 如果不是首次运行, 并且这次运行的版本比上次运行的版本高
-            setNewVersionFirstRun(true);
-        } else {
-            setNewVersionFirstRun(false);
-        }
+    static int sInstallVersion; // 安装版本
+    static int sLastVersion; // 如果是升级的, 上一个版本
+    static int sLastRunVersion; // 上一次启动时的运行版本
+    static long sInstallAndUpgradeTime; // 安装或升级后首次运行时间
+    static long sFirstRunTime; // 第一次安装
+    static int sCurrVersion; // 当前版本
+    static boolean sHasRefresh; // 是否已经初始化过
 
-        saveLastVersionCodeSharedPreferences(context, curVersionCode); // 保存本次运行的版本
-        if (curVersionCode > sLastVersionCode) { // 保存升级首次运行时间
-            SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-            prefs.edit().putLong(ISharedPreferences.APP_FRIST_RUN_AND_UPGRADE_TIME, System.currentTimeMillis()).commit();
+    /**
+     * 初始化数据
+     * @param context
+     */
+    public synchronized static void refreshState(Context context) {
+        SharedPreferences sp = context.getSharedPreferences(INSTALL_VERSION_SP, Context.MODE_MULTI_PROCESS);
+        sInstallVersion = sp.getInt(INSTALL_VERSION_KEY, 0);
+        sLastVersion = sp.getInt(LAST_VERSION_KEY, 0);
+        sLastRunVersion = sp.getInt(LAST_RUN_VERSION_KEY + MachineUtils.getCurrProcessName(context), 0);
+        sInstallAndUpgradeTime = sp.getLong(INSTALL_AND_UPGRADE_TIME, 0);
+
+        sFirstRunTime = sp.getLong(FIRST_INSTALL_TIME, 0);
+
+        sCurrVersion = getCurrVersion(context);
+        if (sCurrVersion > 0) {
+            SharedPreferences.Editor editor = sp.edit();
+            if (sInstallVersion == 0) { // 首次安装
+                sInstallVersion = sCurrVersion;
+                sLastRunVersion = sLastVersion = 0;
+                editor.putInt(INSTALL_VERSION_KEY, sInstallVersion)
+                        .putLong(INSTALL_AND_UPGRADE_TIME, sInstallAndUpgradeTime = System.currentTimeMillis())
+                        .putLong(FIRST_INSTALL_TIME, sFirstRunTime = System.currentTimeMillis());
+            } else if (sLastRunVersion != sCurrVersion) { // 升级或降级
+                sLastVersion = sLastRunVersion;
+                editor.putInt(LAST_VERSION_KEY, sLastVersion)
+                        .putLong(INSTALL_AND_UPGRADE_TIME, sInstallAndUpgradeTime = System.currentTimeMillis());
+            }
+
+            editor.putInt(LAST_RUN_VERSION_KEY + MachineUtils.getCurrProcessName(context), sCurrVersion).apply();
+
+            sHasRefresh = true;
         }
     }
 
-    static long getFirstRunAndUpgradeTime(Context context) {
-		SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-		return prefs.getLong(ISharedPreferences.APP_FRIST_RUN_AND_UPGRADE_TIME, System.currentTimeMillis());
-	}
- 	
-	private static int getLastVersionCodeSharedPreferences(Context context) {
-		SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-		int ver = prefs.getInt(ISharedPreferences.LAST_VERSION_CODE, 0);
-		return ver;
-	}
-	
-	private static void saveLastVersionCodeSharedPreferences(Context context, int versionCode) {
-		SharedPreferences prefs = SpUtils.getSharedPreferences(ISharedPreferences.SP_USER_START);
-		prefs.edit().putInt(ISharedPreferences.LAST_VERSION_CODE, versionCode).commit();
-	}
-	
-    static int getLastVersionCode() {
-		return sLastVersionCode;
-	}
+    /**
+     * 是否是新安装首次启动
+     * @param context
+     * @return
+     */
+    public static boolean isNewUserFirstRun(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sLastRunVersion == 0;
+    }
+
+    /**
+     * 是否是升级用户
+     * @param context
+     * @return
+     */
+    public static boolean isUpgrade(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sInstallVersion < sCurrVersion;
+    }
+
+    /**
+     * 是否是升级后首次启动
+     * @param context
+     * @return
+     */
+    public static boolean isUpgradeFirstRun(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sLastRunVersion > 0 && sLastRunVersion < sCurrVersion;
+    }
+
+    /**
+     * 是否是降级后首次启动
+     * @param context
+     * @return
+     */
+    public static boolean isDowngradeFirstRun(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sLastRunVersion > 0 && sLastRunVersion > sCurrVersion;
+    }
+
+    /**
+     * 获取上一个安装版本
+     * @param context
+     * @return 上一个安装版本号, 如果是首次安装返回0
+     */
+    public static int getLastVersionCode(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sLastVersion;
+    }
+
+    /**
+     * 获取升级后第一次运行的时间, 不包括安装后第一次运行的时间
+     * @param context
+     * @return
+     */
+    public static long getFirstRunAndUpgradeTime(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sInstallAndUpgradeTime;
+    }
+
+    /**
+     * 获取首次安装运行时间
+     * @param context
+     * @return
+     */
+    public static long getFirstRunTime(Context context) {
+        if (!sHasRefresh) {
+            refreshState(context);
+        }
+        return sFirstRunTime;
+    }
+
+    /**
+     * 获取当前版本
+     * @param context
+     * @return
+     */
+    static int getCurrVersion(Context context) {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionCode;
+        } catch (PackageManager.NameNotFoundException e) {
+            e.printStackTrace();
+        }
+        return 0;
+    }
 }

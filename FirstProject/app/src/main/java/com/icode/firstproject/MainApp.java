@@ -5,12 +5,14 @@ import android.content.Context;
 import android.content.Intent;
 
 import com.icode.firstproject.base.BaseApp;
-import com.icode.firstproject.common.userstart.UserStartManagerCompat;
+import com.icode.firstproject.common.userstart.UserStartManager;
 import com.icode.firstproject.utils.AppUtils;
+import com.icode.firstproject.utils.LogUtils;
+import com.icode.firstproject.utils.MachineUtils;
 
 
 /**
- * 应用锁Application
+ * Application
  */
 public class MainApp extends BaseApp {
 
@@ -29,6 +31,7 @@ public class MainApp extends BaseApp {
     protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
 //        MultiDex.install(this);
+        LogUtils.setOpenLogSwitch(MachineUtils.isApkDebugable(base));
     }
 
     @Override
@@ -75,14 +78,14 @@ public class MainApp extends BaseApp {
     }
 
     public static boolean isFirstRun() {
-        return UserStartManagerCompat.isNewUserFirstRun(MainApp.getInstance());
+        return UserStartManager.isNewUserFirstRun(MainApp.getInstance());
     }
 
     public static boolean isNewVersionFirstRun() {
-        return UserStartManagerCompat.isUpgradeFirstRun(MainApp.getInstance());
+        return UserStartManager.isUpgradeFirstRun(MainApp.getInstance());
     }
 
     public static boolean isUpgrade() {
-        return UserStartManagerCompat.isUpgrade(MainApp.getInstance());
+        return UserStartManager.isUpgrade(MainApp.getInstance());
     }
 }
